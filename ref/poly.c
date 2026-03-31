@@ -343,6 +343,16 @@ void poly_add(poly *r, const poly *a, const poly *b)
     r->coeffs[i] = a->coeffs[i] + b->coeffs[i];
 }
 
+void poly_add_avx2(poly *r, const poly *a, const poly *b) {
+    for(int i = 0; i < KYBER_N; i += 16) {
+        __m256i va = _mm256_loadu_si256((__m256i*)&a->coeffs[i]);
+        __m256i vb = _mm256_loadu_si256((__m256i*)&b->coeffs[i]);
+        __m256i vc = _mm256_add_epi16(va, vb);
+        _mm256_storeu_si256((__m256i*)&r->coeffs[i], vc);
+    }
+}
+
+
 /*************************************************
 * Name:        poly_sub
 *
