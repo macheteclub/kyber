@@ -35,7 +35,8 @@
 /*
  * 사이클 타이머 통일:
  * - Linux x86_64: rdtsc 사용 (요청사항)
- * - 그 외: 기존 cpucycles()로 폴백
+ * - macOS/clang 등: cpucycles.h의 inline asm 제약이 깨질 수 있어,
+ *   간단한 대체 타이머를 사용합니다(정밀 "cycles"는 아님).
  */
 #if defined(__x86_64__) && defined(__linux__)
 static inline uint64_t rdtsc(void)
@@ -46,8 +47,12 @@ static inline uint64_t rdtsc(void)
 }
 #define BENCH_CYCLES() rdtsc()
 #else
-#include "test/cpucycles.h"
-#define BENCH_CYCLES() cpucycles()
+static inline uint64_t bench_counter_fallback(void) {
+    /* macOS에서 빌드 깨짐 방지용: 성능 비교는 Linux에서 수행 */
+    static uint64_t x = 0;
+    return ++x;
+}
+#define BENCH_CYCLES() bench_counter_fallback()
 #endif
 
 /* ── 설정 ─────────────────────────────────────────────────────────── */
@@ -99,14 +104,21 @@ static void poly_mul_ntt_scalar(poly *r, const poly *a, const poly *b)
 }
 
 /* ── NTT AVX2 곱 ─────────────────────────────────────────────────── */
+#ifdef USE_AVX2
+/* poly2.c에서 제공 */
+void poly_ntt_avx2(poly *r);
+void poly_invntt_avx2(poly *r);
+void poly_mul_toomcook_avx2(poly *r, const poly *a, const poly *b);
+
 static void poly_mul_ntt_avx2(poly *r, const poly *a, const poly *b)
 {
     poly ta = *a, tb = *b;
     poly_ntt_avx2(&ta);
     poly_ntt_avx2(&tb);
-    poly_basemul_montgomery(r, &ta, &tb);   /* basemul은 공통 (스칼라) */
+    poly_basemul_montgomery(r, &ta, &tb);
     poly_invntt_avx2(r);
 }
+#endif
 
 /* ── 정확성 검증 ─────────────────────────────────────────────────── */
 static int poly_eq_modq(const poly *p, const poly *q_poly)
@@ -131,11 +143,13 @@ int main(void)
     /* ══ 1. 다항식 곱 레벨 벤치마크 ══ */
     printf("=== Poly multiplication  (KYBER_K=%d, N=%d) ===\n\n", KYBER_K, KYBER_N);
 
-    /* 워밍업 */
+    /* ref 빌드에서는 스칼라 NTT만, AVX2 빌드에서는 추가 비교까지 수행 */
     for(int i = 0; i < NWARMUP; i++) {
         poly_mul_ntt_scalar(&r1, &a, &b);
+#ifdef USE_AVX2
         poly_mul_ntt_avx2(&r2, &a, &b);
         poly_mul_toomcook_avx2(&r3, &a, &b);
+#endif
     }
 
     for(int i = 0; i < NTESTS; i++) {
@@ -144,6 +158,7 @@ int main(void)
     t[NTESTS] = BENCH_CYCLES();
     med_ntt_s = print_stat("NTT scalar (ref)", t, NTESTS+1);
 
+#ifdef USE_AVX2
     for(int i = 0; i < NTESTS; i++) {
         t[i] = BENCH_CYCLES(); poly_mul_ntt_avx2(&r2, &a, &b);
     }
@@ -165,6 +180,10 @@ int main(void)
     printf("\n--- Speedup vs NTT scalar ---\n");
     printf("  NTT AVX2  : %.2fx\n", (double)med_ntt_s / med_ntt_avx);
     printf("  Toom-Cook : %.2fx\n", (double)med_ntt_s / med_tc);
+#else
+    (void)med_ntt_avx;
+    (void)med_tc;
+#endif
 
     /* ══ 2. KEM 레벨 벤치마크 ══ */
     printf("\n=== KEM operations (%s) ===\n\n",
