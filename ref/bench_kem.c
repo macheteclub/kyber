@@ -81,6 +81,8 @@ static uint64_t print_stat(const char *label, uint64_t *t, int n)
     return med;
 }
 
+static void poly_rand(poly *p);
+
 /* poly_add/sub/reduce 마이크로벤치 (KEM과 별개) */
 static void bench_poly_ops(void)
 {
