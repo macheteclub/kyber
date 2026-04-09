@@ -343,14 +343,24 @@ void poly_add(poly *r, const poly *a, const poly *b)
     r->coeffs[i] = a->coeffs[i] + b->coeffs[i];
 }
 
+/*
+ * NOTE:
+ * 이 파일은 "ref(스칼라)" 구현입니다.
+ * AVX2 버전은 `poly2.c` + `poly_avx2_wrap.c`에서 --wrap으로 링크 교체합니다.
+ * 아래 AVX2 intrinsic 테스트 코드는 ref 빌드에서 컴파일 오류를 유발할 수 있어
+ * USE_AVX2일 때만 포함합니다.
+ */
+#ifdef USE_AVX2
+#include <immintrin.h>
 void poly_add_avx2(poly *r, const poly *a, const poly *b) {
-    for(int i = 0; i < KYBER_N; i += 16) {
-        __m256i va = _mm256_loadu_si256((__m256i*)&a->coeffs[i]);
-        __m256i vb = _mm256_loadu_si256((__m256i*)&b->coeffs[i]);
-        __m256i vc = _mm256_add_epi16(va, vb);
-        _mm256_storeu_si256((__m256i*)&r->coeffs[i], vc);
-    }
+  for(int i = 0; i < KYBER_N; i += 16) {
+    __m256i va = _mm256_loadu_si256((__m256i*)&a->coeffs[i]);
+    __m256i vb = _mm256_loadu_si256((__m256i*)&b->coeffs[i]);
+    __m256i vc = _mm256_add_epi16(va, vb);
+    _mm256_storeu_si256((__m256i*)&r->coeffs[i], vc);
+  }
 }
+#endif
 
 
 /*************************************************
