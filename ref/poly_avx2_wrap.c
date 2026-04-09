@@ -12,6 +12,12 @@
 #include "poly.h"
 #include "poly2.h"
 
+void __wrap_poly_add(poly *r, const poly *a, const poly *b);
+void __wrap_poly_sub(poly *r, const poly *a, const poly *b);
+void __wrap_poly_reduce(poly *r);
+void __wrap_poly_ntt(poly *r);
+void __wrap_poly_invntt_tomont(poly *r);
+
 void __wrap_poly_add(poly *r, const poly *a, const poly *b) {
     poly_add_avx2(r, a, b);
 }

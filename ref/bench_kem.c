@@ -81,6 +81,44 @@ static uint64_t print_stat(const char *label, uint64_t *t, int n)
     return med;
 }
 
+/* poly_add/sub/reduce 마이크로벤치 (KEM과 별개) */
+static void bench_poly_ops(void)
+{
+    poly a, b, r;
+    uint64_t t[NTESTS + 1];
+
+    poly_rand(&a);
+    poly_rand(&b);
+
+    printf("=== Poly ops (add/sub/reduce) ===\n\n");
+
+    for(int i = 0; i < NWARMUP; i++) {
+        poly_add(&r, &a, &b);
+        poly_sub(&r, &a, &b);
+        poly_reduce(&r);
+    }
+
+    for(int i = 0; i < NTESTS; i++) {
+        t[i] = BENCH_CYCLES(); poly_add(&r, &a, &b);
+    }
+    t[NTESTS] = BENCH_CYCLES();
+    print_stat("poly_add", t, NTESTS+1);
+
+    for(int i = 0; i < NTESTS; i++) {
+        t[i] = BENCH_CYCLES(); poly_sub(&r, &a, &b);
+    }
+    t[NTESTS] = BENCH_CYCLES();
+    print_stat("poly_sub", t, NTESTS+1);
+
+    for(int i = 0; i < NTESTS; i++) {
+        t[i] = BENCH_CYCLES(); poly_reduce(&r);
+    }
+    t[NTESTS] = BENCH_CYCLES();
+    print_stat("poly_reduce", t, NTESTS+1);
+
+    printf("\n");
+}
+
 /* ── 랜덤 다항식 (centered) ──────────────────────────────────────── */
 static void poly_rand(poly *p)
 {
@@ -115,7 +153,8 @@ static void poly_mul_ntt_avx2(poly *r, const poly *a, const poly *b)
 }
 #endif
 
-/* ── 정확성 검증 ─────────────────────────────────────────────────── */
+/* ── 정확성 검증 (AVX2 빌드에서만 사용) ─────────────────────────── */
+#ifdef USE_AVX2
 static int poly_eq_modq(const poly *p, const poly *q_poly)
 {
     for(int i = 0; i < KYBER_N; i++) {
@@ -124,10 +163,13 @@ static int poly_eq_modq(const poly *p, const poly *q_poly)
     }
     return 1;
 }
+#endif
 
 /* ── main ─────────────────────────────────────────────────────────── */
 int main(void)
 {
+    bench_poly_ops();
+
     poly a, b, r1;
 #ifdef USE_AVX2
     poly r2, r3;

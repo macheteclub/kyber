@@ -150,14 +150,35 @@ bench_run: bench_ref bench_avx2
 
 # ref vs AVX2(poly add/sub/reduce + ntt/invntt 교체)의 KeyGen/Enc/Dec를 표 형태로 출력
 bench_table: bench_ref bench_avx2
-	@ref_kg=$$(./bench_ref   | awk '/KeyGen/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
-	 ref_en=$$(./bench_ref   | awk '/Encaps/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
-	 ref_de=$$(./bench_ref   | awk '/Decaps/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
-	 avx_kg=$$(./bench_avx2  | awk '/KeyGen/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
-	 avx_en=$$(./bench_avx2  | awk '/Encaps/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
-	 avx_de=$$(./bench_avx2  | awk '/Decaps/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	@echo ""; \
+	 echo "[bench_table] running ./bench_ref ..." 1>&2; \
+	 ref_out=$$(./bench_ref); \
+	 echo "[bench_table] running ./bench_avx2 ..." 1>&2; \
+	 avx_out=$$(./bench_avx2); \
+	 ref_pa=$$(printf "%s\n" "$$ref_out" | awk '/poly_add/    {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 ref_ps=$$(printf "%s\n" "$$ref_out" | awk '/poly_sub/    {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 ref_pr=$$(printf "%s\n" "$$ref_out" | awk '/poly_reduce/ {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 avx_pa=$$(printf "%s\n" "$$avx_out" | awk '/poly_add/    {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 avx_ps=$$(printf "%s\n" "$$avx_out" | awk '/poly_sub/    {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 avx_pr=$$(printf "%s\n" "$$avx_out" | awk '/poly_reduce/ {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 ref_kg=$$(printf "%s\n" "$$ref_out" | awk '/KeyGen/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 ref_en=$$(printf "%s\n" "$$ref_out" | awk '/Encaps/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 ref_de=$$(printf "%s\n" "$$ref_out" | awk '/Decaps/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 avx_kg=$$(printf "%s\n" "$$avx_out" | awk '/KeyGen/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 avx_en=$$(printf "%s\n" "$$avx_out" | awk '/Encaps/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 avx_de=$$(printf "%s\n" "$$avx_out" | awk '/Decaps/  {for(i=1;i<=NF;i++) if($$i=="med") print $$(i+1)}'); \
+	 if [ -z "$$ref_pa" ] || [ -z "$$avx_pa" ] || [ -z "$$ref_kg" ] || [ -z "$$avx_kg" ]; then \
+	   echo "[bench_table] ERROR: couldn't parse med cycles from bench output" 1>&2; \
+	   echo "--- bench_ref ---" 1>&2; printf "%s\n" "$$ref_out" 1>&2; \
+	   echo "--- bench_avx2 ---" 1>&2; printf "%s\n" "$$avx_out" 1>&2; \
+	   exit 2; \
+	 fi; \
 	 awk "BEGIN { \
 	   printf \"%-8s | %-12s | %-12s | %-25s\\n\", \"Op\", \"Ref(med)\", \"AVX2(med)\", \"SpeedUp / Reduction\"; \
+	   printf \"%s\\n\", \"--------------------------------------------------------------------\"; \
+	   printf \"%-8s | %-12s | %-12s | %6.2fx, %6.2f%%\\n\", \"add\", $$ref_pa, $$avx_pa, ($$ref_pa/$$avx_pa), (1.0-($$avx_pa/$$ref_pa))*100.0; \
+	   printf \"%-8s | %-12s | %-12s | %6.2fx, %6.2f%%\\n\", \"sub\", $$ref_ps, $$avx_ps, ($$ref_ps/$$avx_ps), (1.0-($$avx_ps/$$ref_ps))*100.0; \
+	   printf \"%-8s | %-12s | %-12s | %6.2fx, %6.2f%%\\n\", \"reduce\", $$ref_pr, $$avx_pr, ($$ref_pr/$$avx_pr), (1.0-($$avx_pr/$$ref_pr))*100.0; \
 	   printf \"%s\\n\", \"--------------------------------------------------------------------\"; \
 	   printf \"%-8s | %-12s | %-12s | %6.2fx, %6.2f%%\\n\", \"KeyGen\", $$ref_kg, $$avx_kg, ($$ref_kg/$$avx_kg), (1.0-($$avx_kg/$$ref_kg))*100.0; \
 	   printf \"%-8s | %-12s | %-12s | %6.2fx, %6.2f%%\\n\", \"Enc\",    $$ref_en, $$avx_en, ($$ref_en/$$avx_en), (1.0-($$avx_en/$$ref_en))*100.0; \

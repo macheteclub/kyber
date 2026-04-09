@@ -8,6 +8,8 @@
 #include "verify.h"
 #include <immintrin.h>
 
+#include "poly2.h"
+
 // poly_add --------------------------------------------------
 void poly_add_avx2(poly *r, const poly *a, const poly *b) {
     for(int i = 0; i < KYBER_N; i += 16) {
