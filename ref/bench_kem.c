@@ -105,11 +105,6 @@ static void poly_mul_ntt_scalar(poly *r, const poly *a, const poly *b)
 
 /* ── NTT AVX2 곱 ─────────────────────────────────────────────────── */
 #ifdef USE_AVX2
-/* poly2.c에서 제공 */
-void poly_ntt_avx2(poly *r);
-void poly_invntt_avx2(poly *r);
-void poly_mul_toomcook_avx2(poly *r, const poly *a, const poly *b);
-
 static void poly_mul_ntt_avx2(poly *r, const poly *a, const poly *b)
 {
     poly ta = *a, tb = *b;
@@ -133,9 +128,15 @@ static int poly_eq_modq(const poly *p, const poly *q_poly)
 /* ── main ─────────────────────────────────────────────────────────── */
 int main(void)
 {
-    poly a, b, r1, r2, r3;
+    poly a, b, r1;
+#ifdef USE_AVX2
+    poly r2, r3;
+#endif
     uint64_t t[NTESTS + 1];
-    uint64_t med_ntt_s, med_ntt_avx, med_tc;
+    uint64_t med_ntt_s;
+#ifdef USE_AVX2
+    uint64_t med_ntt_avx, med_tc;
+#endif
 
     poly_rand(&a);
     poly_rand(&b);
@@ -181,8 +182,7 @@ int main(void)
     printf("  NTT AVX2  : %.2fx\n", (double)med_ntt_s / med_ntt_avx);
     printf("  Toom-Cook : %.2fx\n", (double)med_ntt_s / med_tc);
 #else
-    (void)med_ntt_avx;
-    (void)med_tc;
+    (void)med_ntt_s;
 #endif
 
     /* ══ 2. KEM 레벨 벤치마크 ══ */
