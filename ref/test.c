@@ -27,6 +27,60 @@
 #define HANDSHAKE_RETRIES 5
 #define HANDSHAKE_TIMEOUT_MS 700
 
+/* Replay protection (demo-grade):
+ * - Keep a small sliding window of seen seq values.
+ * - Reject duplicates and very old packets.
+ * NOTE: This assumes seq is roughly increasing; for a real system you'd bind
+ * it to a proper per-session record counter and handle wrap/epochs.
+ */
+#define REPLAY_WINDOW 64
+
+typedef struct {
+    uint32_t base;   /* lowest seq tracked */
+    uint64_t bitmap; /* bit i => (base+i) has been seen */
+    int initialized;
+} replay_window_t;
+
+static void replay_window_init(replay_window_t *w) {
+    w->base = 0;
+    w->bitmap = 0;
+    w->initialized = 0;
+}
+
+/* returns 1 if accepted (new), 0 if replay/too old */
+static int replay_window_check_and_mark(replay_window_t *w, uint32_t seq) {
+    if (!w->initialized) {
+        w->base = seq;
+        w->bitmap = 1ULL;
+        w->initialized = 1;
+        return 1;
+    }
+
+    if (seq < w->base) {
+        return 0; /* too old */
+    }
+
+    uint32_t delta = seq - w->base;
+    if (delta >= REPLAY_WINDOW) {
+        /* slide window forward so that seq becomes the last element */
+        uint32_t shift = delta - (REPLAY_WINDOW - 1);
+        if (shift >= REPLAY_WINDOW) {
+            w->bitmap = 0;
+        } else {
+            w->bitmap >>= shift;
+        }
+        w->base += shift;
+        delta = seq - w->base;
+    }
+
+    uint64_t mask = 1ULL << delta;
+    if (w->bitmap & mask) {
+        return 0; /* replay */
+    }
+    w->bitmap |= mask;
+    return 1;
+}
+
 /* 패킷 포맷 (DATA)
  * [magic(4)][seq(4)][ct_len(4)][ciphertext(ct_len)]
  * [nonce(12)][pt_len(4)][aead_ct(pt_len)][tag(16)]
@@ -161,6 +215,9 @@ void receiver() {
     uint8_t buffer[4096];
     uint8_t plain[MAX_MSG + 1];
 
+    replay_window_t rw;
+    replay_window_init(&rw);
+
     // receiver가 공개키/비밀키 생성
     if (OQS_KEM_keypair(kem, public_key, secret_key) != OQS_SUCCESS) {
         printf("KeyGen failed\n");
@@ -250,6 +307,14 @@ void receiver() {
     uint32_t seq_net = 0;
     memcpy(&seq_net, buffer + off, 4); off += 4;
     uint32_t seq = ntohl(seq_net);
+
+    /* Replay protection: reject duplicates/old seq before spending CPU on crypto */
+    if (!replay_window_check_and_mark(&rw, seq)) {
+        printf("[receiver] replay/old packet rejected seq=%u\n", seq);
+        close(sockfd);
+        OQS_KEM_free(kem);
+        return;
+    }
 
     uint32_t ct_len_net = 0;
     memcpy(&ct_len_net, buffer + off, 4); off += 4;
@@ -530,7 +595,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // argv[1]로 recv/send 모드를 선택합니다.
+    // argv[1]로 recv/send 모드를 선택
     if (strcmp(argv[1], "recv") == 0) {
         // 수신 측: 키 생성 → 공개키 제공 → 패킷 수신/decaps → 복호화
         receiver();
