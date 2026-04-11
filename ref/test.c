@@ -4,9 +4,9 @@
 #include <stdint.h>         
 #include <unistd.h>        
 // ----------------------------------------------
-#include <arpa/inet.h>      // sockaddr_in, htons, inet_pton
-#include <sys/socket.h>     // socket, bind, sendto, recvfrom
-#include <oqs/oqs.h>        // liboqs ML-KEM
+#include <arpa/inet.h> // sockaddr_in, htons, inet_pton
+#include <sys/socket.h> // socket, bind, sendto, recvfrom
+#include <oqs/oqs.h> // liboqs ML-KEM
 
 // AEAD + KDF (OpenSSL)
 #include <openssl/evp.h>
@@ -17,27 +17,21 @@
 #define PORT 5000 // 포트
 #define MAX_MSG 256 // 최대 길이
 
-// 네트워크/암호 파라미터
+// 네트워크/암호 관련 
 #define REQ_STR "REQ"
-#define MAGIC 0x4b594252u /* 'KYBR' */
-#define AEAD_KEY_LEN 32   /* ChaCha20-Poly1305 key */
-#define AEAD_NONCE_LEN 12 /* ChaCha20-Poly1305 nonce */
+#define MAGIC 0x4b594252u // KYBR
+#define AEAD_KEY_LEN 32 // ChaCha20-Poly1305 키
+#define AEAD_NONCE_LEN 12 // ChaCha20-Poly1305 nonce
 #define AEAD_TAG_LEN 16
 
 #define HANDSHAKE_RETRIES 5
 #define HANDSHAKE_TIMEOUT_MS 700
 
-/* Replay protection (demo-grade):
- * - Keep a small sliding window of seen seq values.
- * - Reject duplicates and very old packets.
- * NOTE: This assumes seq is roughly increasing; for a real system you'd bind
- * it to a proper per-session record counter and handle wrap/epochs.
- */
-#define REPLAY_WINDOW 64
+#define REPLAY_WINDOW 64 
 
-typedef struct {
-    uint32_t base;   /* lowest seq tracked */
-    uint64_t bitmap; /* bit i => (base+i) has been seen */
+typedef struct { // 윈도우 구조체 
+    uint32_t base; 
+    uint64_t bitmap; // bit i => (base+i) 이면 재전송
     int initialized;
 } replay_window_t;
 
@@ -47,7 +41,7 @@ static void replay_window_init(replay_window_t *w) {
     w->initialized = 0;
 }
 
-/* returns 1 if accepted (new), 0 if replay/too old */
+// 새 패킷이면 1 반환, 재전송/오래된 패킷이면 0 반환
 static int replay_window_check_and_mark(replay_window_t *w, uint32_t seq) {
     if (!w->initialized) {
         w->base = seq;
@@ -55,14 +49,13 @@ static int replay_window_check_and_mark(replay_window_t *w, uint32_t seq) {
         w->initialized = 1;
         return 1;
     }
-
     if (seq < w->base) {
-        return 0; /* too old */
+        return 0; // 오래된 패킷
     }
 
     uint32_t delta = seq - w->base;
     if (delta >= REPLAY_WINDOW) {
-        /* slide window forward so that seq becomes the last element */
+        // 윈도우보다 앞선 seq가 오면 비트맵을 앞으로 밀어서 오래된 기록을 제거
         uint32_t shift = delta - (REPLAY_WINDOW - 1);
         if (shift >= REPLAY_WINDOW) {
             w->bitmap = 0;
@@ -75,19 +68,18 @@ static int replay_window_check_and_mark(replay_window_t *w, uint32_t seq) {
 
     uint64_t mask = 1ULL << delta;
     if (w->bitmap & mask) {
-        return 0; /* replay */
+        return 0; // 재전송 ... 
     }
     w->bitmap |= mask;
     return 1;
 }
 
 /* 패킷 포맷 (DATA)
- * [magic(4)][seq(4)][ct_len(4)][ciphertext(ct_len)]
- * [nonce(12)][pt_len(4)][aead_ct(pt_len)][tag(16)]
- *
- * - aead_ct는 "msg"(평문)만 암호화.
- * - AAD로 (magic|seq|ciphertext|nonce|pt_len) 를 넣어 무결성 보호.
- */
+ [magic(4)][seq(4)][ct_len(4)][ciphertext(ct_len)]
+ [nonce(12)][pt_len(4)][aead_ct(pt_len)][tag(16)]
+ - aead_ct는 "msg"(평문)만 암호화함
+ - AAD로 (magic|seq|ciphertext|nonce|pt_len)를 넣어 무결성 보호
+*/
 
 static uint64_t now_ms(void) {
     struct timeval tv;
@@ -102,7 +94,7 @@ static int set_rcv_timeout_ms(int sockfd, int timeout_ms) {
     return setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 }
 
-/* KDF: ss -> aead_key (SHA-256 기반) */
+// KDF: ss -> aead_key (SHA-256 기반) 
 static int kdf_sha256(uint8_t out_key[AEAD_KEY_LEN],
                       const uint8_t *ss, size_t ss_len,
                       const uint8_t *ctx, size_t ctx_len)
@@ -190,8 +182,7 @@ done:
     return ok;
 }
 
-// XOR는 데모용으로는 가능하지만 제출물/실사용엔 비권장(무결성/KDF 없음)
-
+// XOR는 나중에 다른 알고리즘으로 변경할 수 있음
 //  receiver ------------------------------------------
 void receiver() {
     int sockfd;
@@ -205,7 +196,7 @@ void receiver() {
         return;
     }
 
-    // 길이는 kem 객체 안에 들어 있음
+    // 길이는 kem 객체 안에  ... 
     uint8_t public_key[kem->length_public_key];
     uint8_t secret_key[kem->length_secret_key];
     uint8_t ciphertext[kem->length_ciphertext];
@@ -218,7 +209,7 @@ void receiver() {
     replay_window_t rw;
     replay_window_init(&rw);
 
-    // receiver가 공개키/비밀키 생성
+    // receiver가 공개키/비밀키 생성 이후 공개키 전달
     if (OQS_KEM_keypair(kem, public_key, secret_key) != OQS_SUCCESS) {
         printf("KeyGen failed\n");
         OQS_KEM_free(kem);
@@ -247,12 +238,12 @@ void receiver() {
 
     printf("[receiver] waiting on port %d...\n", PORT);
 
-    // 핸드셰이크/데이터 수신 시 무한 대기 방지
+    // 핸드셰이크/데이터 수신 시 무한 대기 방지 처리 ... 
     if (set_rcv_timeout_ms(sockfd, HANDSHAKE_TIMEOUT_MS) < 0) {
         perror("setsockopt(SO_RCVTIMEO)");
     }
 
-    // sender의 공개키 요청 받기
+    // sender의 공개키 요청 받는 부분 
     int n = recvfrom(sockfd, buffer, sizeof(buffer), 0,
                      (struct sockaddr *)&peer_addr, &peer_len);
     if (n < 0) {
@@ -308,7 +299,7 @@ void receiver() {
     memcpy(&seq_net, buffer + off, 4); off += 4;
     uint32_t seq = ntohl(seq_net);
 
-    /* Replay protection: reject duplicates/old seq before spending CPU on crypto */
+    // 재전송 공격 방지 부분: seq ... 윈도우 사용
     if (!replay_window_check_and_mark(&rw, seq)) {
         printf("[receiver] replay/old packet rejected seq=%u\n", seq);
         close(sockfd);
@@ -362,7 +353,7 @@ void receiver() {
         return;
     }
 
-    // shared secret -> AEAD key (KDF)
+    // shared secret으로 AEAD key (KDF) 생성
     const char ctx[] = "kyber-udp-demo-v1";
     if (!kdf_sha256(aead_key, shared_secret, kem->length_shared_secret, (const uint8_t*)ctx, sizeof(ctx)-1)) {
         printf("[receiver] KDF failed\n");
@@ -536,7 +527,7 @@ void sender(const char *ip, const char *msg) {
     memcpy(packet + off, &pt_len_net, 4);
     off += 4;
 
-    // AAD는 지금까지의 바이트 전부
+    // AAD는 지금까지의 바이트 전부로
     const uint8_t *aad = packet;
     size_t aad_len = off;
 
@@ -577,14 +568,14 @@ void sender(const char *ip, const char *msg) {
 int main(int argc, char *argv[]) {
     // - recv: receiver() 실행
     //   1) ML-KEM 키쌍(public/secret) 생성
-    //   2) UDP로 sender의 "REQ"(공개키 요청) 수신
+    //   2) UDP로 sender의 REQ(공개키 요청) 수신
     //   3) public_key 전송
     //   4) sender가 보낸 패킷 수신: [ciphertext][msg_len(4)][enc_msg]
     //   5) decaps(ciphertext, secret_key)로 shared_secret 복원
     //   6) shared_secret을 키로 XOR 복호화하여 평문 출력
 
     // - send <ip> <message>: sender() 실행
-    //   1) UDP로 receiver에 "REQ" 송신 → public_key 수신
+    //   1) UDP로 receiver에 "REQ" 송신 -> public_key 수신
     //   2) encaps(public_key)로 (ciphertext, shared_secret) 생성
     //   3) shared_secret을 키로 XOR 암호화(enc_msg)
     //   4) 패킷 구성 후 전송: [ciphertext][msg_len(4)][enc_msg]
@@ -597,14 +588,14 @@ int main(int argc, char *argv[]) {
 
     // argv[1]로 recv/send 모드를 선택
     if (strcmp(argv[1], "recv") == 0) {
-        // 수신 측: 키 생성 → 공개키 제공 → 패킷 수신/decaps → 복호화
+        // 수신 측: 키 생성 -> 공개키 제공 -> 패킷 수신/decaps -> 복호화
         receiver();
     } else if (strcmp(argv[1], "send") == 0) {
         if (argc < 4) {
             printf("Usage: %s send <ip> <message>\n", argv[0]);
             return 1;
         }
-        // 송신 측: 공개키 요청/수신 → encaps → 암호화 → 패킷 전송
+        // 송신 측: 공개키 요청/수신 -> encaps -> 암호화 -> 패킷 전송
         sender(argv[2], argv[3]);
     } else {
         printf("wrong mode\n");
